@@ -421,8 +421,9 @@ class TileLayer extends Layer {
                     this._coordCache[key] = map._containerPointToPoint(c);
                 }
                 result = this._coordCache[key];
+            } else {
+                result = map._containerPointToPoint(c, undefined, TEMP_POINT);
             }
-            result = map._containerPointToPoint(c, undefined, TEMP_POINT);
             return result;
         });
         // const innerExtent2D = this._getInnerExtent(z, containerExtent, extent2d)._add(offset);
@@ -495,11 +496,12 @@ class TileLayer extends Layer {
                     const { point0 } = tileInfo;
                     p = tileInfo.point.set(point0.x, point0.y);
                 } else if (!this._hasOwnSR) {
-                    p = tileConfig.getTilePointNW(idx.x, idx.y, res);
+                    p = tileConfig.getTilePointNW(idx.x, idx.y, res, idx.xOffset, idx.yOffset);
                     // const pnw = tileConfig.getTilePrjNW(idx.x, idx.y, res);
                     // p = map._prjToPoint(this._unproject(pnw, TEMP_POINT3), z);
                 } else {
                     const pnw = tileConfig.getTilePrjNW(idx.x, idx.y, res);
+                    pnw._add(idx.xOffset, idx.yOffset);
                     p = map._prjToPoint(this._unproject(pnw, TEMP_POINT3), z);
                 }
 

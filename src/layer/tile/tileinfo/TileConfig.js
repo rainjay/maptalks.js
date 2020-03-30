@@ -1,4 +1,4 @@
-import { isString } from '../../../core/util';
+import { isString, isInteger } from '../../../core/util';
 import Coordinate from '../../../geo/Coordinate';
 import Point from '../../../geo/Point';
 import Extent from '../../../geo/Extent';
@@ -64,7 +64,9 @@ class TileConfig {
 
         return {
             'x': tileSystem['scale']['x'] * tileX,
-            'y': tileSystem['scale']['y'] * tileY
+            'y': tileSystem['scale']['y'] * tileY,
+            'xOffset': point.x % (tileSize['width'] * res),
+            'yOffset': point.x % (tileSize['width'] * res),
         };
     }
 
@@ -115,34 +117,31 @@ class TileConfig {
         let out = false;
         const idx = x;
         const idy = y;
-
         const ext = this._getTileFullIndex(res);
+        const xOffset = 0;
+        const yOffset = 0;
         if (repeatWorld) {
             if (repeatWorld === true || repeatWorld === 'x') {
                 //caculate tile index to request in url in repeated world.
                 if (ext['xmax'] === ext['xmin']) {
                     x = ext['xmin'];
                 } else if (x < ext['xmin']) {
-                    x = ext['xmax'] - (ext['xmin'] - x) % (ext['xmax'] - ext['xmin']);
-                    if (x === ext['xmax']) {
-                        x = ext['xmin'];
-                    }
-                } else if (x >= ext['xmax']) {
-                    x = ext['xmin'] + (x - ext['xmin']) % (ext['xmax'] - ext['xmin']);
+                    x = ext['xmax'] - (ext['xmin'] - x - 1) % (ext['xmax'] - ext['xmin'] + 1);
+                } else if (x > ext['xmax']) {
+                    x = ext['xmin'] + (x - ext['xmin']) % (ext['xmax'] - ext['xmin'] + 1);
                 }
+                //TODO瓦片的偏移
             }
 
             if (repeatWorld === true || repeatWorld === 'y') {
                 if (ext['ymax'] === ext['ymin']) {
                     y = ext['ymin'];
-                } else if (y >= ext['ymax']) {
-                    y = ext['ymin'] + (y - ext['ymin']) % (ext['ymax'] - ext['ymin']);
                 } else if (y < ext['ymin']) {
-                    y = ext['ymax'] - (ext['ymin'] - y) % (ext['ymax'] - ext['ymin']);
-                    if (y === ext['ymax']) {
-                        y = ext['ymin'];
-                    }
+                    y = ext['ymax'] - (ext['ymin'] - y - 1) % (ext['ymax'] - ext['ymin'] + 1);
+                } else if (y > ext['ymax']) {
+                    y = ext['ymin'] + (y - ext['ymin']) % (ext['ymax'] - ext['ymin'] + 1);
                 }
+                //TODO瓦片的偏移
             }
         }
         if (x < ext['xmin'] || x > ext['xmax'] || y > ext['ymax'] || y < ext['ymin']) {
@@ -152,6 +151,8 @@ class TileConfig {
             // tile index to request in url
             'x': x,
             'y': y,
+            xOffset,
+            yOffset,
             // real tile index
             'idx' : idx,
             'idy' : idy,
@@ -168,21 +169,37 @@ class TileConfig {
         }
         const ext = this.fullExtent;
         const transformation = this.transformation;
-        const nwIndex = this._getTileNum(transformation.transform(new Coordinate(ext['left'], ext['top']), 1), res);
-        const seIndex = this._getTileNum(transformation.transform(new Coordinate(ext['right'], ext['bottom']), 1), res);
+        const nwProj = new Coordinate(ext['left'], ext['top']);
+        const nwIndex = this._getTileNum(transformation.transform(nwProj, 1), res);
+        const seProj = new Coordinate(ext['right'], ext['bottom']);
+        const seIndex = this._getTileNum(transformation.transform(seProj, 1), res);
+        const nwOffset = {
+            x: -nwProj.x % (this.tileSize.width * res),
+            y: -nwProj.y % (this.tileSize.height * res),
+        };
+        const seOffset = {
+            x: -seProj.x % (this.tileSize.width * res),
+            y: seProj.y % (this.tileSize.height * res),
+        };
 
         const tileSystem = this.tileSystem;
         //如果x方向为左大右小
         if (tileSystem['scale']['x'] < 0) {
             nwIndex.x -= 1;
             seIndex.x -= 1;
+        } else if (seIndex.xOffset === 0) {
+            seIndex.x -= 1;
         }
         //如果y方向上大下小
         if (tileSystem['scale']['y'] > 0) {
             nwIndex.y -= 1;
             seIndex.y -= 1;
+        } else if (seIndex.yOffset === 0) {
+            seIndex.y -= 1;
         }
         this._tileFullIndex[res] = new Extent(nwIndex, seIndex);
+        this._tileFullIndex[res].nwOffset = nwOffset;
+        this._tileFullIndex[res].seOffset = seOffset;
         return this._tileFullIndex[res];
     }
 
@@ -201,14 +218,14 @@ class TileConfig {
         return new Coordinate(x, y);
     }
 
-    getTilePointNW(tileX, tileY, res) {
+    getTilePointNW(tileX, tileY, res, xOffset, yOffset) {
         // res = res / this._glRes;
         const scale = this._glRes / res;
         const tileSystem = this.tileSystem;
         const tileSize = this['tileSize'];
         const y = this._pointOrigin.y * scale + this._yScale * tileSystem['scale']['y'] * (tileY + (tileSystem['scale']['y'] === 1 ? 1 : 0)) * tileSize['height'];
         const x = this._pointOrigin.x * scale + this._xScale * tileSystem['scale']['x'] * (tileX + (tileSystem['scale']['x'] === 1 ? 0 : 1)) * tileSize['width'];
-        return new Point(x, y);
+        return new Point(x, y)._add(xOffset / this._glRes, yOffset / this._glRes);
     }
 
     /**
